@@ -1,0 +1,15 @@
+services:
+  e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: e2e-tests
+    # Optional: copy .env.example → .env for BASE_URL, auth, SMTP, etc.
+    env_file:
+      - path: .env
+        required: false
+    shm_size: '2gb'
+    volumes:
+      - ./reports:/app/reports
+    # Override per run, e.g. `docker compose run --rm e2e npm run smoke`
+    command: npm run regression

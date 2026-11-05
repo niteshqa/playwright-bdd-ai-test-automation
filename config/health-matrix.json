@@ -1,0 +1,50 @@
+{
+  "$comment": "Health-check matrix plan (utils/healthMatrix.js). One entry per check id (the @HC### tag on a scenario in features/monitoring/healthCheck.feature). applies: apps the check is relevant to (others = NA). backed: apps with an automated test (applies but not backed = Skip). policy: 'excluded' = NA everywhere (unsafe to run unattended on prod, e.g. places an order); 'heartbeat' = HB (covered by the 2-hourly heartbeat instead).",
+  "apps": ["saucedemo"],
+  "checks": {
+    "HC001": {
+      "title": "Home/login page renders",
+      "policy": "heartbeat",
+      "applies": ["saucedemo"],
+      "backed": ["saucedemo"]
+    },
+    "HC002": {
+      "title": "Registered user can log in",
+      "policy": "heartbeat",
+      "applies": ["saucedemo"],
+      "backed": ["saucedemo"]
+    },
+    "HC003": {
+      "title": "Catalog lists products with name and price",
+      "applies": ["saucedemo"],
+      "backed": ["saucedemo"]
+    },
+    "HC004": {
+      "title": "Catalog sorting works",
+      "applies": ["saucedemo"],
+      "backed": ["saucedemo"]
+    },
+    "HC005": {
+      "title": "Product detail page opens from the catalog",
+      "applies": ["saucedemo"],
+      "backed": ["saucedemo"]
+    },
+    "HC006": {
+      "title": "Add to cart updates the cart badge",
+      "applies": ["saucedemo"],
+      "backed": ["saucedemo"]
+    },
+    "HC007": {
+      "title": "Checkout reaches the order overview",
+      "applies": ["saucedemo"],
+      "backed": ["saucedemo"]
+    },
+    "HC008": {
+      "title": "Place a real order",
+      "policy": "excluded",
+      "applies": ["saucedemo"],
+      "backed": []
+    },
+    "HC009": { "title": "Mobile web layout", "applies": ["saucedemo"], "backed": [] }
+  }
+}

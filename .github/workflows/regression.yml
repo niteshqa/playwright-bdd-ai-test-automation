@@ -1,0 +1,60 @@
+# Scheduled weekday regression against staging (or any env via manual dispatch). Production writes
+# (@prodWrite) are always excluded — they're supervised-local-only.
+name: Regression
+
+on:
+  schedule:
+    - cron: '0 13 * * 1-5' # 13:00 UTC, Mon–Fri
+  workflow_dispatch:
+    inputs:
+      test_env:
+        description: Environment (dev | staging | prod)
+        default: staging
+      grep:
+        description: Tag expression to run
+        default: '@regression'
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CI: 'true'
+      # Job-level so the email steps' `if:` can see it (a step's own env isn't visible to its if).
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      TEST_ENV: ${{ inputs.test_env || 'staging' }}
+      LIGHT_REPORT: 'true'
+      STAGING_AUTH_USERNAME: ${{ secrets.STAGING_AUTH_USERNAME }}
+      STAGING_AUTH_PASSWORD: ${{ secrets.STAGING_AUTH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/verify-browser.js
+      - run: npx bddgen
+      - name: Run regression
+        run: npx playwright test --project=chromium --grep "${{ inputs.grep || '@regression' }}" --grep-invert "@prodWrite"
+      - name: Build Allure report
+        if: always()
+        run: npx allure generate reports/allure-results || true
+      - name: Email report
+        if: always() && env.SMTP_HOST != ''
+        run: npm run report:email
+        env:
+          REPORT_SUITE: Regression
+          BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_TO: ${{ vars.EMAIL_TO }}
+          EMAIL_CC: ${{ vars.EMAIL_CC }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regression-report
+          path: reports/
+          retention-days: 14

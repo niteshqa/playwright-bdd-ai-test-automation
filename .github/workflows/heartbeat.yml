@@ -1,0 +1,86 @@
+# READ-ONLY availability heartbeat every 2 hours. Alerts only on state change: a failure emails,
+# the first green run after a failure emails "RECOVERED", steady green stays silent.
+name: Heartbeat
+
+on:
+  schedule:
+    - cron: '17 */2 * * *' # every 2h, off the top of the hour
+  workflow_dispatch:
+
+concurrency:
+  group: heartbeat
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      # Job-level so the email steps' `if:` can see it (a step's own env isn't visible to its if).
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      HEALTH_CHECK_ENV: prod
+      TEST_ENV: prod
+      LIGHT_REPORT: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      # Last run's state (pass/fail) persisted through the Actions cache.
+      - name: Restore last state
+        uses: actions/cache/restore@v4
+        with:
+          path: .heartbeat-state
+          key: heartbeat-state-${{ github.run_id }}
+          restore-keys: heartbeat-state-
+
+      - name: Run heartbeat
+        id: run
+        run: npm run heartbeat
+        continue-on-error: true
+
+      - name: Decide alert
+        id: alert
+        if: always()
+        run: |
+          PREV=$(cat .heartbeat-state 2>/dev/null || echo pass)
+          NOW=${{ steps.run.outcome == 'success' && 'pass' || 'fail' }}
+          echo "$NOW" > .heartbeat-state
+          echo "now=$NOW" >> "$GITHUB_OUTPUT"
+          echo "recovered=$([ "$PREV" = fail ] && [ "$NOW" = pass ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .heartbeat-state
+          key: heartbeat-state-${{ github.run_id }}
+
+      - name: Email on failure / recovery
+        if: always() && env.SMTP_HOST != ''
+        run: npm run report:email
+        env:
+          REPORT_SUITE: Heartbeat
+          EMAIL_ON_FAILURE_ONLY: 'true'
+          RECOVERED: ${{ steps.alert.outputs.recovered }}
+          BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_TO: ${{ vars.EMAIL_TO }}
+
+      - uses: actions/upload-artifact@v4
+        if: steps.alert.outputs.now == 'fail'
+        with:
+          name: heartbeat-report
+          path: reports/
+          retention-days: 7
+
+      - name: Fail job on red heartbeat
+        if: steps.alert.outputs.now == 'fail'
+        run: exit 1

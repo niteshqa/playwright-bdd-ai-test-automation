@@ -1,0 +1,9 @@
+node_modules/
+reports/
+cleanup-ledger/
+playwright-report/
+allure-report/
+blob-report/
+.features-gen/
+package-lock.json
+*.min.js

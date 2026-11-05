@@ -1,0 +1,13 @@
+node_modules
+.git
+reports
+playwright-report
+test-results
+blob-report
+.features-gen
+cleanup-ledger
+.env
+.env.*
+.vscode
+.idea
+npm-debug.log

@@ -1,0 +1,113 @@
+# Bitbucket Pipelines — same jobs as the GitHub Actions workflows. Schedule the custom pipelines
+# (Repository settings → Pipelines → Schedules). Secured variables: STAGING_AUTH_*, SMTP_*,
+# EMAIL_TO. Production writes (@prodWrite) are always excluded.
+image: mcr.microsoft.com/playwright:v1.62.0-jammy
+
+definitions:
+  caches:
+    npm: ~/.npm
+  steps:
+    - step: &verify
+        name: Lint + compile features
+        caches: [npm]
+        script:
+          - npm ci --ignore-scripts
+          - npm run lint
+          - npm run format:check
+          - npx bddgen
+    - step: &smoke
+        name: Smoke
+        caches: [npm]
+        script:
+          - npm ci --ignore-scripts
+          - export CI=true
+          - npm run smoke
+        artifacts:
+          - reports/**
+
+pipelines:
+  default:
+    - step: *verify
+    - step: *smoke
+
+  custom:
+    regression:
+      - variables:
+          - name: TEST_ENV
+            default: staging
+          - name: GREP
+            default: '@regression'
+      - step:
+          name: Regression
+          caches: [npm]
+          max-time: 90
+          script:
+            - npm ci --ignore-scripts
+            - export CI=true LIGHT_REPORT=true
+            - npx bddgen
+            - npx playwright test --project=chromium --grep "$GREP" --grep-invert "@prodWrite" || echo "FAILED" > reports/.failed
+            - npx allure generate reports/allure-results || true
+            - '[ -z "$SMTP_HOST" ] || REPORT_SUITE=Regression BUILD_URL="$BITBUCKET_GIT_HTTP_ORIGIN/pipelines/results/$BITBUCKET_BUILD_NUMBER" npm run report:email'
+            - '[ ! -f reports/.failed ]'
+          artifacts:
+            - reports/**
+
+    # Parallel shards (e.g. one per app): each shard writes a blob, the last step merges them.
+    regression-sharded:
+      - parallel:
+          - step:
+              name: Shard 1/2
+              caches: [npm]
+              script:
+                - npm ci --ignore-scripts && npx bddgen
+                - export CI=true PW_BLOB=true PLAYWRIGHT_BLOB_FILE=shard-1.zip
+                - npx playwright test --project=chromium --grep @regression --grep-invert @prodWrite --shard=1/2 || true
+              artifacts:
+                - blob-report/**
+          - step:
+              name: Shard 2/2
+              caches: [npm]
+              script:
+                - npm ci --ignore-scripts && npx bddgen
+                - export CI=true PW_BLOB=true PLAYWRIGHT_BLOB_FILE=shard-2.zip
+                - npx playwright test --project=chromium --grep @regression --grep-invert @prodWrite --shard=2/2 || true
+              artifacts:
+                - blob-report/**
+      - step:
+          name: Merge reports
+          caches: [npm]
+          script:
+            - npm ci --ignore-scripts
+            - npx playwright merge-reports --reporter html,junit blob-report
+          artifacts:
+            - playwright-report/**
+
+    health-check:
+      - step:
+          name: Daily health check (read-only)
+          caches: [npm]
+          max-time: 45
+          script:
+            - npm ci --ignore-scripts
+            - export CI=true LIGHT_REPORT=true HEALTH_CHECK_ENV=prod TEST_ENV=prod
+            - npm run health-check || true
+            - npm run health:matrix
+            - '[ -z "$SMTP_HOST" ] || REPORT_SUITE="Daily Health Check" npm run report:email'
+            - node -e "process.exit(require('./reports/health-summary.json').verdict === 'PASSED' ? 0: 1)"
+          artifacts:
+            - reports/**
+
+    heartbeat:
+      - step:
+          name: Heartbeat (read-only)
+          caches: [npm]
+          max-time: 20
+          script:
+            - npm ci --ignore-scripts
+            - export CI=true LIGHT_REPORT=true HEALTH_CHECK_ENV=prod TEST_ENV=prod
+            - npm run heartbeat && STATUS=pass || STATUS=fail
+            # Email failures only (recovery notices need persisted state — see docs/ci.md).
+            - '[ -z "$SMTP_HOST" ] || REPORT_SUITE=Heartbeat EMAIL_ON_FAILURE_ONLY=true npm run report:email'
+            - '[ "$STATUS" = pass ]'
+          artifacts:
+            - reports/**

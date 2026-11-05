@@ -1,0 +1,60 @@
+# Daily READ-ONLY production health check: runs @healthCheck, builds the status matrix
+# (reports/health-matrix.xlsx) and emails it. Never places orders (@prodWrite excluded + guard).
+name: Health check
+
+on:
+  schedule:
+    - cron: '0 10 * * *' # daily 10:00 UTC
+  workflow_dispatch:
+    inputs:
+      health_check_env:
+        description: Target (prod | staging)
+        default: prod
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      # Job-level so the email steps' `if:` can see it (a step's own env isn't visible to its if).
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      HEALTH_CHECK_ENV: ${{ inputs.health_check_env || 'prod' }}
+      TEST_ENV: ${{ inputs.health_check_env || 'prod' }}
+      LIGHT_REPORT: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run health check
+        run: npm run health-check
+        continue-on-error: true
+      - name: Build health matrix
+        if: always()
+        run: npm run health:matrix
+      - name: Email report
+        if: always() && env.SMTP_HOST != ''
+        run: npm run report:email
+        env:
+          REPORT_SUITE: Daily Health Check
+          BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_TO: ${{ vars.EMAIL_TO }}
+          EMAIL_CC: ${{ vars.EMAIL_CC }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: health-check-report
+          path: reports/
+          retention-days: 30
+      # Surface the verdict as the job status after reporting.
+      - name: Fail on red matrix
+        if: always()
+        run: |
+          node -e "process.exit(require('./reports/health-summary.json').verdict === 'PASSED' ? 0 : 1)"

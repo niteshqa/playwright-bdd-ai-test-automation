@@ -1,0 +1,83 @@
+{
+  "name": "playwright-bdd-ai-test-automation",
+  "version": "0.1.0",
+  "description": "Plug-and-play Playwright + Gherkin (playwright-bdd) E2E framework with Claude-native AI agents for planning, generating, self-healing and triaging tests",
+  "keywords": [
+    "playwright",
+    "playwright-bdd",
+    "bdd",
+    "gherkin",
+    "cucumber",
+    "e2e",
+    "test-automation",
+    "page-object-model",
+    "self-healing",
+    "ai",
+    "claude",
+    "allure"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/<your-org>/playwright-bdd-ai-test-automation.git"
+  },
+  "scripts": {
+    "bdd:gen": "bddgen",
+    "test": "bddgen && playwright test --grep-invert @prodWrite",
+    "test:headed": "bddgen && playwright test --headed",
+    "test:debug": "bddgen && playwright test --debug",
+    "test:ui": "bddgen && playwright test --ui",
+    "test:grep": "bddgen && playwright test --grep",
+    "regression": "bddgen && playwright test --project=chromium --grep @regression --grep-invert @prodWrite",
+    "smoke": "bddgen && playwright test --project=chromium --grep @smoke --grep-invert @prodWrite",
+    "health-check": "bddgen && cross-env HEALTH_RESULTS_JSON=reports/results.json playwright test --project=chromium --grep @healthCheck --grep-invert @prodWrite --retries=2",
+    "heartbeat": "bddgen && playwright test --project=chromium --grep @heartbeat --grep-invert @prodWrite --retries=1",
+    "health:matrix": "node scripts/write-health-matrix.js",
+    "test:report": "playwright show-report reports/playwright-report",
+    "cucumber:report": "open-cli reports/cucumber-report/index.html",
+    "allure:generate": "allure generate reports/allure-results",
+    "allure:serve": "allure serve ./reports/allure-results",
+    "report:email": "node scripts/send-report-email.js",
+    "report:view": "node scripts/view-report.js",
+    "verify:browser": "node scripts/verify-browser.js",
+    "new:page": "node scripts/new-page.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@playwright/test": "1.62.0",
+    "dotenv": "^17.4.2",
+    "nodemailer": "^6.10.1"
+  },
+  "devDependencies": {
+    "@allurereport/web-components": "^3.8.2",
+    "@eslint/js": "^9.17.0",
+    "allure": "^3.12.0",
+    "allure-playwright": "^3.9.0",
+    "cross-env": "^7.0.3",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "exceljs": "^4.4.0",
+    "globals": "^15.14.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.3.0",
+    "open-cli": "^8.0.0",
+    "playwright-bdd": "^9.2.1",
+    "prettier": "^3.4.2"
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
